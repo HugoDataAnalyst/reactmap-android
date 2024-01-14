@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">ReactMap</string>
+    <string name="app_name">PokéVagos</string>
 
     <string name="notification_channel_site_controller">Full screen site controls</string>
     <string name="notification_channel_webhook_failed">Background location update failed</string>
@@ -16,7 +16,7 @@
     <string name="notification_webhook_updating_title">Updating location</string>
     <string name="notification_webhook_updating_message">%1$f,%2$f from %3$s</string>
 
-    <string name="config_dialog_title">ReactMap URL:</string>
+    <string name="config_dialog_title">PokéVagos URL:</string>
     <string name="config_welcome">You can return to this dialog later by clicking on the notification.</string>
     <string name="config_switch_webhook_follow_location">Make alerts follow location in background\n(beware that you
         would be sharing your location with the map)</string>
