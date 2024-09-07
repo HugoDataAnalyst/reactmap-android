@@ -57,12 +57,14 @@ class MainActivity : FragmentActivity() {
         enableEdgeToEdge()
         if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
         setContentView(R.layout.layout_main)
-        handleIntent(intent)
-        if (currentFragment == null) reactMapFragment(null)
-        if (app.pref.getBoolean(KEY_WELCOME, true)) {
-            startConfigure(true)
-            app.pref.edit { putBoolean(KEY_WELCOME, false) }
-        }
+        if (savedInstanceState == null) {
+            handleIntent(intent)
+            reactMapFragment()
+            if (app.pref.getBoolean(KEY_WELCOME, true)) {
+                startConfigure(true)
+                app.pref.edit { putBoolean(KEY_WELCOME, false) }
+            }
+        } else currentFragment = supportFragmentManager.findFragmentById(R.id.content) as ReactMapFragment?
         AlertDialogFragment.setResultListener<ConfigDialogFragment, Empty>(this) { which, _ ->
             if (which != DialogInterface.BUTTON_POSITIVE) return@setResultListener
             currentFragment?.terminate()
@@ -103,24 +105,26 @@ class MainActivity : FragmentActivity() {
             } catch (e: IOException) {
                 Timber.d(e)
             }
-            reactMapFragment(null)
+            reactMapFragment()
         }
         supportFragmentManager.setFragmentResultListener("ReactMapFragment", this) { _, _ ->
-            reactMapFragment(null)
+            reactMapFragment()
         }
         lifecycleScope.launch { repeatOnLifecycle(Lifecycle.State.STARTED) { UpdateChecker.check() } }
     }
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleIntent(intent)
     }
 
-    private var currentFragment: ReactMapFragment? = null
-    private fun reactMapFragment(overrideUri: Uri?) = supportFragmentManager.commit {
-        replace(R.id.content, ReactMapFragment(overrideUri).also { currentFragment = it })
+    var currentFragment: ReactMapFragment? = null
+    var pendingOverrideUri: Uri? = null
+    private fun reactMapFragment() = supportFragmentManager.commit {
+        replace(R.id.content, ReactMapFragment().also { currentFragment = it })
     }
 
     private fun handleIntent(intent: Intent?) {
+        setIntent(null)
         if (intent == null || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY ==
             Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) return
         when (intent.action) {
@@ -147,8 +151,8 @@ class MainActivity : FragmentActivity() {
                 setNeutralButton(android.R.string.cancel, null)
             }.show()
             Intent.ACTION_VIEW -> {
-                val currentFragment = currentFragment
-                if (currentFragment == null) reactMapFragment(intent.data) else currentFragment.handleUri(intent.data)
+                Timber.d("Handling URI ${intent.data}")
+                if (currentFragment?.handleUri(intent.data) != true) pendingOverrideUri = intent.data
             }
         }
     }
@@ -171,8 +175,7 @@ class MainActivity : FragmentActivity() {
             } catch (e: Exception) {
                 Timber.w(e)
                 withContext(Dispatchers.Main) {
-                    Snackbar.make(currentFragment?.web ?: findViewById(android.R.id.content), e.readableMessage,
-                        Snackbar.LENGTH_LONG).show()
+                    Snackbar.make(findViewById(android.R.id.content), e.readableMessage, Snackbar.LENGTH_LONG).show()
                 }
             }
         }
