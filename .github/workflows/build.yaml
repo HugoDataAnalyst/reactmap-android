@@ -14,14 +14,20 @@ jobs:
     steps:
       - name: Check GitHub Secrets
         run: |
-          miss(){ echo "Missing $1 secret"; exit 1; }
-          [ -z "${{ secrets.KEYSTORE_FILE }}" ] && miss KEYSTORE_FILE
-          [ -z "${{ secrets.KEYSTORE_PASSWORD }}" ] && miss KEYSTORE_PASSWORD
-          [ -z "${{ secrets.KEY_ALIAS }}" ] && miss KEY_ALIAS
-          [ -z "${{ secrets.KEY_PASSWORD }}" ] && miss KEY_PASSWORD
-          [ -z "${{ secrets.MAP_URL }}" ] && miss MAP_URL
-          [ -z "${{ secrets.APP_NAME }}" ] && miss APP_NAME
-          # GITHUB_TOKEN is auto-provided; don't check it as a secret.
+          missing=()
+          [ -z "${{ secrets.KEYSTORE_FILE }}" ] && missing+=("KEYSTORE_FILE")
+          [ -z "${{ secrets.KEYSTORE_PASSWORD }}" ] && missing+=("KEYSTORE_PASSWORD")
+          [ -z "${{ secrets.KEY_ALIAS }}" ] && missing+=("KEY_ALIAS")
+          [ -z "${{ secrets.KEY_PASSWORD }}" ] && missing+=("KEY_PASSWORD")
+          [ -z "${{ secrets.MAP_URL }}" ] && missing+=("MAP_URL")
+          [ -z "${{ secrets.APP_NAME }}" ] && missing+=("APP_NAME")
+
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "Missing secrets: ${missing[*]}"
+            exit 1
+          fi
+
+          echo "All required secrets are present."
 
   build:
     needs: check_secrets
