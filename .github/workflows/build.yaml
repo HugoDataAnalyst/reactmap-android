@@ -10,6 +10,8 @@ permissions:
 
 jobs:
   check_secrets:
+    # run only if manual dispatch OR commit message contains 'deploy'
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'deploy') }}
     runs-on: ubuntu-latest
     steps:
       - name: Check GitHub Secrets
@@ -21,15 +23,14 @@ jobs:
           [ -z "${{ secrets.KEY_PASSWORD }}" ] && missing+=("KEY_PASSWORD")
           [ -z "${{ secrets.MAP_URL }}" ] && missing+=("MAP_URL")
           [ -z "${{ secrets.APP_NAME }}" ] && missing+=("APP_NAME")
-
           if [ ${#missing[@]} -gt 0 ]; then
             echo "Missing secrets: ${missing[*]}"
             exit 1
           fi
-
           echo "All required secrets are present."
 
   build:
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'deploy') }}
     needs: check_secrets
     runs-on: ubuntu-latest
     steps:
@@ -41,6 +42,16 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+
+      # (optional but recommended) speed up builds
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
 
       - name: Restore keystore from secret (base64)
         run: echo "${{ secrets.KEYSTORE_FILE }}" | tr -d '\n' | base64 -d > keystore.jks
@@ -65,11 +76,25 @@ jobs:
             -Preactmap.packageName='${{ env.PACKAGE_NAME }}' \
             -Preactmap.appName='${{ secrets.APP_NAME }}'
 
+      # More robust find (handles split/universal APKs)
+      - name: Locate release APK
+        id: find_apk
+        run: |
+          set -euo pipefail
+          ls -R app/build/outputs/apk/ || true
+          APK_PATH="$(ls app/build/outputs/apk/release/*release*.apk | head -n 1 || true)"
+          if [ -z "${APK_PATH}" ]; then
+            echo "No release APK found in app/build/outputs/apk/release/"
+            exit 1
+          fi
+          echo "APK_PATH=${APK_PATH}" >> $GITHUB_ENV
+          echo "Found: ${APK_PATH}"
+
       - name: Rename APK with version
         run: |
-          ls -R app/build/outputs/apk/
-          mv app/build/outputs/apk/release/app-release.apk \
-             app/build/outputs/apk/release/${{ secrets.APP_NAME }}-v${{ env.VERSION_NAME }}.apk
+          DEST="app/build/outputs/apk/release/${{ secrets.APP_NAME }}-v${{ env.VERSION_NAME }}.apk"
+          cp "${APK_PATH}" "${DEST}"
+          echo "Renamed to: ${DEST}"
 
       - name: Upload Artifact (v4)
         uses: actions/upload-artifact@v4
@@ -78,11 +103,15 @@ jobs:
           path: app/build/outputs/apk/release/${{ secrets.APP_NAME }}-v${{ env.VERSION_NAME }}.apk
           retention-days: 90
 
-      - name: Create GitHub Release
+      - name: Create/Update GitHub Release
         uses: ncipollo/release-action@v1
         with:
+          # unique tag per deploy so every 'deploy' push publishes a fresh release
+          tag: v${{ env.VERSION_NAME }}+${{ github.run_number }}
+          name: ${{ secrets.APP_NAME }} v${{ env.VERSION_NAME }} (build ${{ github.run_number }})
           artifacts: app/build/outputs/apk/release/${{ secrets.APP_NAME }}-v${{ env.VERSION_NAME }}.apk
           token: ${{ github.token }}
           generateReleaseNotes: true
-          skipIfReleaseExists: true
-          tag: v${{ env.VERSION_NAME }}
+          allowUpdates: true
+          replacesArtifacts: true
+          makeLatest: true
